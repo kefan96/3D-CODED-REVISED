@@ -138,10 +138,13 @@ class SelfAttention(nn.Module):
         h = x.view(batchsize, -1)
         h = F.relu(self.bn1(self.lin1(h).unsqueeze(-1)))
         h = self.sig(self.bn2(self.lin2(h.squeeze(2))))
-        h = h.view(batchsize, -1, 3, 1).expand(batchsize, -1, 3, 3)
+        value, idx = torch.max(h, -1, keepdim = True)
+        z = torch.zeros_like(h)
+        z[torch.arange(h.size(0))[:, None, None], torch.arange(h.size(1))[None,:, None], idx] = 1
+        z = z.view(batchsize, -1, 3, 1).expand(batchsize, -1, 3, 3)
         # print("Weights: ", h)
         # print("Coords: ", x)
-        return h
+        return z
         
     
 
