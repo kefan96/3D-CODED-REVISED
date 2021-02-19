@@ -24,14 +24,14 @@ class Experiments(object):
             7: "python inference/script.py --dir_name learning_elementary_structure_trained_models_2/3D_CODED --HR 1 --faust INTRA",
         }
         self.trainings = {
-            0: "python training/train.py --id 0 --point_translation 0 --patch_deformation 1",
-            1: "python training/train.py --id 1 --point_translation 1 --patch_deformation 0",
-            2: "python training/train.py --id 2 --point_translation 0 --patch_deformation 0",
-            3: "python training/train.py --id 3 --point_translation 1 --patch_deformation 1",
-            4: "python training/train.py --id 4 --point_translation 1 --patch_deformation 0 --dim_template 2 --dim_out_patch 2",
-            5: "python training/train.py --id 4 --point_translation 1 --patch_deformation 0 --dim_template 10 --dim_out_patch 10",
-            6: "python training/train.py --id 4 --point_translation 0 --patch_deformation 1 --dim_template 2 --dim_out_patch 2",
-            7: "python training/train.py --id 4 --point_translation 0 --patch_deformation 1 --dim_template 10 --dim_out_patch 10",
+            0: "python training/train.py --id 0 --point_translation 0 --patch_deformation 0",
+            # 1: "python training/train.py --id 1 --point_translation 1 --patch_deformation 0",
+            # 2: "python training/train.py --id 2 --point_translation 0 --patch_deformation 1",
+            # 3: "python training/train.py --id 3 --point_translation 1 --patch_deformation 1",
+            # 4: "python training/train.py --id 4 --point_translation 1 --patch_deformation 0 --dim_template 2 --dim_out_patch 2",
+            # 5: "python training/train.py --id 4 --point_translation 1 --patch_deformation 0 --dim_template 10 --dim_out_patch 10",
+            # 6: "python training/train.py --id 4 --point_translation 0 --patch_deformation 1 --dim_template 2 --dim_out_patch 2",
+            # 7: "python training/train.py --id 4 --point_translation 0 --patch_deformation 1 --dim_template 10 --dim_out_patch 10",
         }
 
 exp = Experiments()
@@ -64,7 +64,7 @@ def job_scheduler(dict_of_jobs):
             print("Waiting to find a GPU for ", job)
             time.sleep(30) # Sleeps for 30 sec
         gpu_id = get_first_available_gpu()
-        cmd = f"conda activate pytorch-3D-CODED; CUDA_VISIBLE_DEVICES={gpu_id} {job} 2>&1 | tee  log_terminals/{gpu_id}_{job_key}.txt; tmux kill-session -t GPU{gpu_id}"
+        cmd = f"conda activate /scratch/ky1323/3D-CODED/envs; CUDA_VISIBLE_DEVICES={gpu_id} {job} 2>&1 | tee  log_terminals/{gpu_id}_{job_key}.txt; tmux kill-session -t GPU{gpu_id}"
         CMD = f'tmux new-session -d -s GPU{gpu_id} \; send-keys "{cmd}" Enter'
         print(CMD)
         os.system(CMD)

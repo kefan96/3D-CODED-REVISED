@@ -88,6 +88,7 @@ class SURREAL(data.Dataset):
     def __len__(self):
         if self.train:
             return 230000
+            # return 200
         else:
             return 200
 

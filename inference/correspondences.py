@@ -153,7 +153,7 @@ class Inference(object):
         # while np.log(loss) > -9.5 and i < self.reg_num_steps:
         while np.log(loss) > -9.5 and i < self.reg_num_steps:
             self.optimizer.zero_grad()
-            pointsReconstructed = self.network.decode(input_param)  # forward pass
+            pointsReconstructed, _, _ = self.network.decode(input_param)  # forward pass
             pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
 
             dist1, dist2 = distChamfer(points.transpose(2, 1).contiguous(), pointsReconstructed)
@@ -176,17 +176,24 @@ class Inference(object):
 
             i = i + 1
         with torch.no_grad():
-            if self.HR:
-                pointsReconstructed = self.network.decode_full(input_param)  # forward pass
-                pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
+            # if self.HR:
+            #     pointsReconstructed = self.network.decode_full(input_param)  # forward pass
+            #     pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
 
-            else:
-                pointsReconstructed = self.network.decode(input_param)  # forward pass
-                pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
-
+            # else:
+            
+            pointsReconstructed, _, _ = self.network.decode(input_param)  # forward pass
+            pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
+            
+            output1 = self.network.decoder[0](torch.cat((self.network.templates[0].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
+            output1 = output1.squeeze(-1).transpose(1, 2)
+            output2 = self.network.decoder[1](torch.cat((self.network.templates[1].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
+            output2 = output2.squeeze(-1).transpose(1, 2)
+            output3 = self.network.decoder[2](torch.cat((self.network.templates[2].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
+            output3 = output3.squeeze(-1).transpose(1, 2)
 
         print(f"loss reg : {loss} after {i} iterations")
-        return pointsReconstructed
+        return pointsReconstructed, output1, output2, output3
 
     def run(self, input, scalefactor, path):
         """
@@ -230,7 +237,7 @@ class Inference(object):
         theta = 0
         best_template = 0
         bestLoss = 10
-        pointsReconstructed = self.network(points_LR)
+        pointsReconstructed, _, _ = self.network(points_LR)
         pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
         dist1, dist2 = distChamfer(points_LR.transpose(2, 1).contiguous(), pointsReconstructed)
         loss_net = (torch.mean(dist1)) + (torch.mean(dist2))
@@ -253,7 +260,7 @@ class Inference(object):
                 phi = PHI[i, j]
                 rotateCenterPointCloud.rotate_center(phi, theta)
                 input_network = rotateCenterPointCloud.centered_points
-                pointsReconstructed = self.network(input_network)
+                pointsReconstructed, _, _ = self.network(input_network)
                 pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
                 dist1, dist2 = distChamfer(input_network.transpose(2, 1).contiguous(), pointsReconstructed)
                 loss_net = (torch.mean(dist1)) + (torch.mean(dist2))
@@ -292,14 +299,12 @@ class Inference(object):
 
         print("best loss and theta and phi : ", bestLoss.item(), best_theta, best_phi)
 
-        if self.HR:
-            faces_tosave = self.network.template[0].mesh_HR.faces
-        else:
-            faces_tosave = self.network.template[0].mesh.faces
 
-        # create initial guess
+        faces_tosave = self.network.templates[0].mesh.faces
+
+        # # create initial guess
         mesh = trimesh.Trimesh(vertices=(bestPoints[0].data.cpu().numpy() + translation) / scalefactor,
-                               faces=self.network.template[0].mesh.faces, process=False)
+                               faces=self.network.templates[0].mesh.faces, process=False)
         try:
             plt.plot(X, Y)
             plt.savefig("curve.png")
@@ -312,14 +317,18 @@ class Inference(object):
         rotateCenterPointCloud = pointcloud_processor.RotateCenterPointCloud(points)
         rotateCenterPointCloud.rotate_center(best_phi, best_theta)
         input_network = rotateCenterPointCloud.centered_points
-        pointsReconstructed1 = self.regress(input_network)
+        pointsReconstructed1, output1, output2, output3 = self.regress(input_network)
         pointsReconstructed1[0] = rotateCenterPointCloud.back(pointsReconstructed1[0])
         # create optimal reconstruction
         meshReg = trimesh.Trimesh(vertices=(pointsReconstructed1[0].data.cpu().numpy() + translation) / scalefactor,
                                   faces=faces_tosave, process=False)
+        print(output1.shape, pointsReconstructed1.shape)
+        output1mesh = trimesh.Trimesh(vertices=output1[0].data.cpu().numpy(), faces=faces_tosave, process=False)
+        output2mesh = trimesh.Trimesh(vertices=output2[0].data.cpu().numpy(), faces=faces_tosave, process=False)
+        output3mesh = trimesh.Trimesh(vertices=output3[0].data.cpu().numpy(), faces=faces_tosave, process=False)
 
         print("... Done!")
-        return mesh, meshReg
+        return mesh, meshReg, output1mesh, output2mesh, output3mesh
 
     def save(self, mesh, mesh_color, path, red, green, blue):
         """
@@ -366,7 +375,7 @@ class Inference(object):
 
 
         my_utils.test_orientation(input)
-        mesh, meshReg = self.run(input, scalefactor, input_p)
+        mesh, meshReg, output1mesh, output2mesh, output3mesh = self.run(input, scalefactor, input_p)
 
         if not self.HR:
             red = self.red_LR
@@ -378,15 +387,24 @@ class Inference(object):
             red = self.red_HR
             green = self.green_HR
             mesh_ref = self.mesh_ref
-
+        
         if self.save_path is None:
             self.save(mesh, self.mesh_ref_LR, input_p[:-4] + "InitialGuess.ply", self.red_LR, self.green_LR,
                       self.blue_LR)
             self.save(meshReg, mesh_ref, input_p[:-4] + "FinalReconstruction.ply", red, green, blue)
+            self.save(output1mesh, mesh_ref, input_p[:-4] + "Reconstruction1.ply", red, green, blue)
+            self.save(output2mesh, mesh_ref, input_p[:-4] + "Reconstruction2.ply", red, green, blue)
+            self.save(output3mesh, mesh_ref, input_p[:-4] + "Reconstruction3.ply", red, green, blue)
         else:
             self.save(mesh, self.mesh_ref_LR, os.path.join(self.save_path, input_p[-8:-4] + f"InitialGuess.ply"),
                       self.red_LR, self.green_LR, self.blue_LR)
             self.save(meshReg, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "FinalReconstruction.ply"), red,
+                      green, blue)
+            self.save(output1mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction1.ply"), red,
+                      green, blue)
+            self.save(output2mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction2.ply"), red,
+                      green, blue)
+            self.save(output3mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction3.ply"), red,
                       green, blue)
 
         # Save optimal reconstruction
@@ -400,10 +418,10 @@ if __name__ == '__main__':
     my_utils.plant_seeds(randomized_seed=opt.randomize)
     trainer = trainer.Trainer(opt)
     trainer.build_network()
-    trainer.network.make_high_res_template_from_low_res()
+    # trainer.network.make_high_res_template_from_low_res()
 
     my_utils.plant_seeds(randomized_seed=opt.randomize)
-    inf = Inference(HR=opt.HR, reg_num_steps=opt.reg_num_steps, num_points=opt.number_points,
+    inf = Inference(HR=opt.HR, reg_num_steps=3000, num_points=opt.number_points,
                     num_angles=opt.num_angles, clean=opt.clean, scale=opt.scale,
                     project_on_target=opt.project_on_target, LR_input=opt.LR_input, save_path=opt.dir_name, network=trainer.network)
 

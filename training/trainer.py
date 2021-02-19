@@ -54,7 +54,7 @@ class Trainer(AbstractTrainer):
         Create training dataset
         """
         # /auxiliary/dataset.py
-        self.dataset_train = dataset.SURREAL(train=True, regular_sampling=True)
+        self.dataset_train = dataset.SURREAL(train=True, regular_sampling=False)
         self.dataloader_train = torch.utils.data.DataLoader(self.dataset_train, batch_size=self.opt.batch_size,
                                                             shuffle=True, num_workers=int(self.opt.workers),
                                                             drop_last=True)
@@ -64,7 +64,7 @@ class Trainer(AbstractTrainer):
         """
         Create testing dataset
         """
-        self.dataset_test = dataset.SURREAL(train=False)
+        self.dataset_test = dataset.SURREAL(train=False, regular_sampling=False)
         self.dataloader_test = torch.utils.data.DataLoader(self.dataset_test, batch_size=5,
                                                            shuffle=False, num_workers=int(self.opt.workers),
                                                            drop_last=True)
@@ -79,7 +79,8 @@ class Trainer(AbstractTrainer):
     def train_iteration(self):
         self.optimizer.zero_grad()
         # training steps
-        pointsReconstructed = self.network(self.points, self.idx)  # forward pass # batch, num_point, 3
+        pointsReconstructed, _, _ = self.network(self.points)  # forward pass # batch, num_point, 3
+        # pointsReconstructed = self.network(self.points)  # forward pass # batch, num_point, 3
         loss_train_total = torch.mean(
                 (pointsReconstructed.view(self.points.size(0), -1, 3) - self.points.transpose(2, 1).contiguous()) ** 2)
         loss_train_total.backward()
@@ -119,12 +120,12 @@ class Trainer(AbstractTrainer):
             try:
                 # if self.iteration > 10:
                 #     break
-                points, idx, _, _ = iterator.next()
+                points, _, _, _ = iterator.next()
                 # question
                 points = points.transpose(2, 1).contiguous()
                 points = points.cuda()
                 self.points = points
-                self.idx = idx
+                # self.idx = idx
                 self.increment_iteration()
             except:
                 print(colored("end of train dataset", 'red'))
@@ -133,7 +134,7 @@ class Trainer(AbstractTrainer):
         print("Ellapsed time : ", time.time() - start)
 
     def test_iteration(self):
-        pointsReconstructed = self.network(self.points)
+        pointsReconstructed, coords, weights = self.network(self.points)
 
         loss_val_Deformation_ChamferL2 = torch.mean(
                 (pointsReconstructed.view(self.points.size(0), -1, 3) - self.points.transpose(2, 1).contiguous()) ** 2)
@@ -149,6 +150,8 @@ class Trainer(AbstractTrainer):
         if self.iteration % 60 == 1 and self.opt.display:
             self.visualizer.show_pointclouds(points=self.points[0], title="test_input")
             self.visualizer.show_pointclouds(points=pointsReconstructed[0], title="test_input_reconstructed")
+        print(coords)
+        print(weights)
 
     def test_epoch(self):
         self.network.eval()
@@ -163,6 +166,7 @@ class Trainer(AbstractTrainer):
                 points = points.transpose(2, 1).contiguous()
                 points = points.cuda()
                 self.points = points
+                # self.idx = idx
             except:
                 print(colored("end of val dataset", 'red'))
                 break

@@ -15,7 +15,7 @@ import correspondences
 def main(opt, network):
     if not os.path.exists(os.path.join(opt.dataset_path, "test_scan_006.ply")):
         print("please download test data from http://faust.is.tue.mpg.de/")
-        # os._exit(os.EX_OK)
+        os._exit(os.EX_OK)
 
     if not os.path.exists("learning_elementary_structure_trained_models/0point_translation/network.pth"):
         os.system("chmod +x ./inference/download_trained_models.sh")
