@@ -138,13 +138,8 @@ class SelfAttention(nn.Module):
         h = x.view(batchsize, -1)
         h = F.relu(self.bn1(self.lin1(h).unsqueeze(-1)))
         h = self.sig(self.bn2(self.lin2(h.squeeze(2))))
-        value, idx = torch.max(h, -1, keepdim = True)
-        z = torch.zeros_like(h)
-        z[torch.arange(h.size(0))[:, None, None], torch.arange(h.size(1))[None,:, None], idx] = 1
-        z = z.view(batchsize, -1, 3, 1).expand(batchsize, -1, 3, 3)
-        # print("Weights: ", h)
-        # print("Coords: ", x)
-        return z
+        h = h.view(batchsize, -1, 3)
+        return torch.softmax(h, -1)
         
     
 
@@ -188,7 +183,8 @@ class OEMDNet(nn.Module):
     def decode(self, x, idx=None):
         x = self.morph_points(x, idx)
         w = self.attention(x)
-        return torch.mean(x * w, 3), x, w
+        value, idx = torch.max(w, -1, keepdim = True)
+        return x[]
 
     def forward(self, x, idx=None):
         x = self.encoder(x)
