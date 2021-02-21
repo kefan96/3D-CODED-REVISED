@@ -139,7 +139,7 @@ class SelfAttention(nn.Module):
         h = F.relu(self.bn1(self.lin1(h).unsqueeze(-1)))
         h = self.sig(self.bn2(self.lin2(h.squeeze(2))))
         h = h.view(batchsize, -1, 3)
-        return torch.softmax(h, -1)
+        return h
         
     
 
@@ -184,7 +184,9 @@ class OEMDNet(nn.Module):
         x = self.morph_points(x, idx)
         w = self.attention(x)
         value, idx = torch.max(w, -1, keepdim = True)
-        return x[]
+        x = x[torch.arange(x.size(0))[:, None, None, None], torch.arange(x.size(1))[None, :, None, None], torch.arange(x.size(2))[None, None, :, None], idx.unsqueeze(-1)]
+        
+        return x.squeeze(-1)
 
     def forward(self, x, idx=None):
         x = self.encoder(x)
