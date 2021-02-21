@@ -138,7 +138,7 @@ class SelfAttention(nn.Module):
         h = x.view(batchsize, -1)
         h = F.relu(self.bn1(self.lin1(h).unsqueeze(-1)))
         h = self.sig(self.bn2(self.lin2(h.squeeze(2))))
-        h = h.view(batchsize, -1, 3, 1).expand(batchsize, -1, 3, 3)
+        h = h.unsqueeze(-2).expand(batchsize, -1, 3, 3)
         # print("Weights: ", h)
         # print("Coords: ", x)
         return h
