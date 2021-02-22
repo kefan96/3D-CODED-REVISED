@@ -139,6 +139,7 @@ class SelfAttention(nn.Module):
         h = F.relu(self.bn1(self.lin1(h).unsqueeze(-1)))
         h = self.sig(self.bn2(self.lin2(h.squeeze(2))))
         h = h.view(batchsize, -1, 3)
+        h = torch.softmax(h, -1)
         h = h.unsqueeze(-2).expand(batchsize, -1, 3, 3)
         # print("Weights: ", h)
         # print("Coords: ", x)
@@ -186,7 +187,7 @@ class OEMDNet(nn.Module):
     def decode(self, x, idx=None):
         x = self.morph_points(x, idx)
         w = self.attention(x)
-        return torch.mean(x * w, 3), x, w
+        return torch.sum(x * w, 3), x, w
 
     def forward(self, x, idx=None):
         x = self.encoder(x)
