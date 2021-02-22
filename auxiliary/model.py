@@ -186,7 +186,7 @@ class OEMDNet(nn.Module):
         value, idx = torch.max(w, -1, keepdim = True)
         x = x[torch.arange(x.size(0))[:, None, None, None], torch.arange(x.size(1))[None, :, None, None], torch.arange(x.size(2))[None, None, :, None], idx.unsqueeze(-1)]
         
-        return x.squeeze(-1)
+        return x.squeeze(-1), x, w
 
     def forward(self, x, idx=None):
         x = self.encoder(x)
