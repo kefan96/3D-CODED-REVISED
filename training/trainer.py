@@ -81,11 +81,23 @@ class Trainer(AbstractTrainer):
         # training steps
         pointsReconstructed, _, _ = self.network(self.points)  # forward pass # batch, num_point, 3
         # pointsReconstructed = self.network(self.points)  # forward pass # batch, num_point, 3
-        loss_train_total = torch.mean(
+        
+        # latent_code = self.network.encoder(self.points)
+        # output1 = self.network.decoder[0](torch.cat((self.network.templates[0].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(latent_code.size(0), 3, -1), latent_code.unsqueeze(2).expand(latent_code.size(0), latent_code.size(1), 6890).contiguous()), 1))
+        # output2 = self.network.decoder[1](torch.cat((self.network.templates[1].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(latent_code.size(0), 3, -1), latent_code.unsqueeze(2).expand(latent_code.size(0), latent_code.size(1), 6890).contiguous()), 1))
+        # output3 = self.network.decoder[2](torch.cat((self.network.templates[2].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(latent_code.size(0), 3, -1), latent_code.unsqueeze(2).expand(latent_code.size(0), latent_code.size(1), 6890).contiguous()), 1))
+        
+        reconstruction_loss = torch.mean(
                 (pointsReconstructed.view(self.points.size(0), -1, 3) - self.points.transpose(2, 1).contiguous()) ** 2)
+        # decoder_loss_1 = torch.mean((output1.view(self.points.size(0), -1, 3) - self.points.transpose(2, 1).contiguous()) ** 2)
+        # decoder_loss_2 = torch.mean((output2.view(self.points.size(0), -1, 3) - self.points.transpose(2, 1).contiguous()) ** 2)
+        # decoder_loss_3 = torch.mean((output3.view(self.points.size(0), -1, 3) - self.points.transpose(2, 1).contiguous()) ** 2)
+        
+        loss_train_total = reconstruction_loss # + 0.3 * (decoder_loss_1 + decoder_loss_2 + decoder_loss_3)
         loss_train_total.backward()
 
         self.log.update("loss_train_total", loss_train_total)
+        # self.log.update("reconstruction loss", reconstruction_loss)
         self.optimizer.step()  # gradient update
 
 
@@ -109,9 +121,11 @@ class Trainer(AbstractTrainer):
             # optimizer.load_state_dict(self.optimizer.state_dict()) # copy state
             self.optimizer = torch.optim.Adam(self.network.parameters(), lr=self.opt.lrate)
 
+    
     def train_epoch(self):
         self.log.reset()
         self.network.train()
+        # self.network.apply(my_utils.fix_bn)
         self.learning_rate_scheduler()      # update learning rate and optimizer
         start = time.time()
         iterator = self.dataloader_train.__iter__()
@@ -120,7 +134,7 @@ class Trainer(AbstractTrainer):
             try:
                 # if self.iteration > 10:
                 #     break
-                points, _, _, _ = iterator.next()
+                points, idx, _, _ = iterator.next()
                 # question
                 points = points.transpose(2, 1).contiguous()
                 points = points.cuda()

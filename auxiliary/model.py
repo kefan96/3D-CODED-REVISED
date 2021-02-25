@@ -50,7 +50,7 @@ class PointGenCon(nn.Module):
         self.bottleneck_size = bottleneck_size
         super(PointGenCon, self).__init__()
         print("bottleneck_size", bottleneck_size)
-        self.conv1 = torch.nn.Conv1d(self.bottleneck_size, self.bottleneck_size, 1)
+        self.conv1 = torch.nn.Conv1d(1027, self.bottleneck_size, 1)
         self.conv2 = torch.nn.Conv1d(self.bottleneck_size, self.bottleneck_size // 2, 1)
         self.conv3 = torch.nn.Conv1d(self.bottleneck_size // 2, self.bottleneck_size // 4, 1)
         self.conv4 = torch.nn.Conv1d(self.bottleneck_size // 4, 3, 1)
@@ -67,8 +67,31 @@ class PointGenCon(nn.Module):
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
+        z = x
         x = 2 * self.th(self.conv4(x))
-        return x.unsqueeze(-1)      # batch_size, 3, num_points, 1
+        return x.unsqueeze(-1), z      # batch_size, 3, num_points, 1
+    
+class WeightGenCon(nn.Module):
+    def __init__(self):
+        self.bottleneck_size = (1027 // 4) * 3
+        super(WeightGenCon, self).__init__()
+        
+        self.conv1 = torch.nn.Conv1d(self.bottleneck_size, self.bottleneck_size // 2, 1)
+        self.conv2 = torch.nn.Conv1d(self.bottleneck_size // 2, self.bottleneck_size // 4, 1)
+        self.conv3 = torch.nn.Conv1d(self.bottleneck_size // 4, 3, 1)
+        
+        self.bn1 = torch.nn.BatchNorm1d(self.bottleneck_size // 2)
+        self.bn2 = torch.nn.BatchNorm1d(self.bottleneck_size // 4)
+        
+        self.sigmoid = torch.sigmoid
+        
+    def forward(self, x):
+        batchsize = x.size()[0]
+        # print(x.size())
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.sigmoid(self.conv3(x))
+        return x # batch_size, 3, num_points
     
 class FeatureMerge(nn.Module):
     def __init__(self, bottleneck_size=2500):
@@ -125,21 +148,23 @@ class SelfAttention(nn.Module):
     def __init__(self, num_points=6890):
         super(SelfAttention, self).__init__()
         self.num_points = num_points
+        
+        self.bottleneck_size = self.num_points * 3 * 3 + 1024
     
-        self.lin1 = torch.nn.Linear(self.num_points * 3 * 3, self.num_points)
-        self.lin2 = torch.nn.Linear(self.num_points, self.num_points * 3)
-        self.sig = torch.sigmoid
+        self.lin1 = torch.nn.Linear(self.bottleneck_size, self.bottleneck_size // 2)
+        self.lin2 = torch.nn.Linear(self.bottleneck_size // 2, self.num_points * 3)
+        self.softmax = torch.softmax
         
         self.bn1 = torch.nn.BatchNorm1d(self.num_points)
         self.bn2 = torch.nn.BatchNorm1d(self.num_points * 3)
         
-    def forward(self, x):
+    def forward(self, x, z):
         batchsize = x.size()[0]
-        h = x.view(batchsize, -1)
+        h = torch.cat((x.view(batchsize, -1), z), -1)
         h = F.relu(self.bn1(self.lin1(h).unsqueeze(-1)))
-        h = self.sig(self.bn2(self.lin2(h.squeeze(2))))
+        h = self.bn2(self.lin2(h.squeeze(2)))
         h = h.view(batchsize, -1, 3)
-        h = torch.softmax(h, -1)
+        h = self.softmax(h, -1)
         h = h.unsqueeze(-2).expand(batchsize, -1, 3, 3)
         # print("Weights: ", h)
         # print("Coords: ", x)
@@ -164,8 +189,8 @@ class OEMDNet(nn.Module):
         # self.templates = [Template("template.ply"), Template("template.ply"), Template("template.ply")]
 
         self.encoder = PointNetfeat(num_points, bottleneck_size)
-        self.decoder = nn.ModuleList([PointGenCon(bottleneck_size=self.dim_before_decoder + self.bottleneck_size), PointGenCon(bottleneck_size=self.dim_before_decoder + self.bottleneck_size), PointGenCon(bottleneck_size=self.dim_before_decoder + self.bottleneck_size)])
-        self.attention = SelfAttention(num_points=6890)
+        self.decoder = nn.ModuleList([PointGenCon(bottleneck_size=1027), PointGenCon(bottleneck_size=1027), PointGenCon(bottleneck_size=1027)])
+        self.attention = WeightGenCon()
         
     def morph_points(self, x, idx=None):
         if not idx is None:
@@ -180,14 +205,23 @@ class OEMDNet(nn.Module):
 
         y = x.unsqueeze(2).expand(x.size(0), x.size(1), rand_grids[0].size(2)).contiguous() # batch_size, 1024, num_points
         ys = [torch.cat((r, y), 1).contiguous() for r in rand_grids]    # batch_size, 1027, num_pounts
-        out = [self.decoder[i](ys[i]).contiguous().transpose(2, 1).contiguous() for i in range(3)]     # batch_size, 3, num_points, 1 => batch_size, num_points, 3, 1
-        out = [out[i] + rand_grids[i].unsqueeze(-1).transpose(2, 1).contiguous() for i in range(3)]
-        return torch.cat(out, 3)            # batch_size, num_points, 3, 3
+        drifts, features = [], []
+        for i in range(3):
+            d, f = self.decoder[i](ys[i])
+            drifts.append(d.contiguous().transpose(2, 1).contiguous())
+            features.append(f.contiguous())
+        z = torch.cat(features, 1)
+        w = self.attention(z).contiguous().transpose(2, 1).unsqueeze(-2).contiguous() # batch_size, num_points, 3
+        x = [drifts[i] + rand_grids[i].unsqueeze(-1).transpose(2, 1).contiguous() for i in range(3)]
+        x = torch.cat(x, -1)    # batch_size, num_points, 3, 3
+        value, idx = torch.max(w, -1, keepdim = True)   # idx: batch_size, num_points, 1, 1
+        x = x[torch.arange(x.size(0))[:, None, None, None], torch.arange(x.size(1))[None, :, None, None], torch.arange(x.size(2))[None, None, :, None], idx].squeeze(-1)
+        return x, w            # batch_size, num_points, 3, 3
 
     def decode(self, x, idx=None):
-        x = self.morph_points(x, idx)
-        w = self.attention(x)
-        return torch.sum(x * w, 3), x, w
+        x, w = self.morph_points(x, idx)
+        # w = self.attention(points, x)
+        return x, x, w 
 
     def forward(self, x, idx=None):
         x = self.encoder(x)
