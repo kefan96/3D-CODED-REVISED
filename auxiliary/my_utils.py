@@ -239,6 +239,11 @@ def sampleSphere(N):
 
     return sphere
 
+def fix_bn(m):
+    classname = m.__class__.__name__
+    if classname.find('BatchNorm') != -1:
+        m.eval()
+
 if __name__ == '__main__':
 
   #To make your color choice reproducible, uncomment the following line:
