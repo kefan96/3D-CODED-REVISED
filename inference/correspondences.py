@@ -185,12 +185,12 @@ class Inference(object):
             pointsReconstructed, _, _ = self.network.decode(input_param)  # forward pass
             pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
             
-            output1 = self.network.decoder[0](torch.cat((self.network.templates[0].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
-            output1 = output1.squeeze(-1).transpose(1, 2)
-            output2 = self.network.decoder[1](torch.cat((self.network.templates[1].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
-            output2 = output2.squeeze(-1).transpose(1, 2)
-            output3 = self.network.decoder[2](torch.cat((self.network.templates[2].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
-            output3 = output3.squeeze(-1).transpose(1, 2)
+            output1, z1 = self.network.decoder[0](torch.cat((self.network.templates[0].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
+            output1 = output1.squeeze(-1).transpose(1, 2) + self.network.templates[0].vertex
+            output2, z2 = self.network.decoder[1](torch.cat((self.network.templates[1].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
+            output2 = output2.squeeze(-1).transpose(1, 2) + self.network.templates[1].vertex
+            output3, z3 = self.network.decoder[2](torch.cat((self.network.templates[2].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
+            output3 = output3.squeeze(-1).transpose(1, 2) + self.network.templates[2].vertex
 
         print(f"loss reg : {loss} after {i} iterations")
         return pointsReconstructed, output1, output2, output3

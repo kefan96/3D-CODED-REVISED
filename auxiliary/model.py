@@ -211,11 +211,21 @@ class OEMDNet(nn.Module):
             drifts.append(d.contiguous().transpose(2, 1).contiguous())
             features.append(f.contiguous())
         z = torch.cat(features, 1)
-        w = self.attention(z).contiguous().transpose(2, 1).unsqueeze(-2).contiguous() # batch_size, num_points, 3
-        x = [drifts[i] + rand_grids[i].unsqueeze(-1).transpose(2, 1).contiguous() for i in range(3)]
-        x = torch.cat(x, -1)    # batch_size, num_points, 3, 3
-        value, idx = torch.max(w, -1, keepdim = True)   # idx: batch_size, num_points, 1, 1
-        x = x[torch.arange(x.size(0))[:, None, None, None], torch.arange(x.size(1))[None, :, None, None], torch.arange(x.size(2))[None, None, :, None], idx].squeeze(-1)
+        w = self.attention(z).contiguous().transpose(2, 1).unsqueeze(-2).contiguous() # batch_size, num_points,1, 3
+        
+        # multiply weights, average
+        # print(drifts[0].size())
+        # print(rand_grids[0].size())
+        x = [(drifts[i].squeeze(-1) + rand_grids[i].transpose(2, 1)).unsqueeze(-1).contiguous() for i in range(3)]
+        x = torch.cat(x, -1)
+        x = x * w
+        x = torch.sum(x, -1)
+        
+        # 0-1 weights, choose
+        # x = [drifts[i] + rand_grids[i].unsqueeze(-1).transpose(2, 1).contiguous() for i in range(3)]
+        # x = torch.cat(x, -1)    # batch_size, num_points, 3, 3
+        # value, idx = torch.max(w, -1, keepdim = True)   # idx: batch_size, num_points, 1, 1
+        # x = x[torch.arange(x.size(0))[:, None, None, None], torch.arange(x.size(1))[None, :, None, None], torch.arange(x.size(2))[None, None, :, None], idx].squeeze(-1)
         return x, w            # batch_size, num_points, 3, 3
 
     def decode(self, x, idx=None):
