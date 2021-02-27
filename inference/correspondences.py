@@ -182,7 +182,7 @@ class Inference(object):
 
             # else:
             
-            pointsReconstructed, _, _ = self.network.decode(input_param)  # forward pass
+            pointsReconstructed, _, weights = self.network.decode(input_param)  # forward pass
             pointsReconstructed = pointsReconstructed.view(pointsReconstructed.size(0), -1, 3)
             
             output1, z1 = self.network.decoder[0](torch.cat((self.network.templates[0].vertex.transpose(0, 1).contiguous().unsqueeze(0).expand(input_param.size(0), 3, -1), input_param.unsqueeze(2).expand(input_param.size(0), input_param.size(1), 6890).contiguous()), 1))
@@ -193,7 +193,7 @@ class Inference(object):
             output3 = output3.squeeze(-1).transpose(1, 2) + self.network.templates[2].vertex
 
         print(f"loss reg : {loss} after {i} iterations")
-        return pointsReconstructed, output1, output2, output3
+        return pointsReconstructed, output1, output2, output3, weights
 
     def run(self, input, scalefactor, path):
         """
@@ -317,7 +317,7 @@ class Inference(object):
         rotateCenterPointCloud = pointcloud_processor.RotateCenterPointCloud(points)
         rotateCenterPointCloud.rotate_center(best_phi, best_theta)
         input_network = rotateCenterPointCloud.centered_points
-        pointsReconstructed1, output1, output2, output3 = self.regress(input_network)
+        pointsReconstructed1, output1, output2, output3, weights = self.regress(input_network)
         pointsReconstructed1[0] = rotateCenterPointCloud.back(pointsReconstructed1[0])
         # create optimal reconstruction
         meshReg = trimesh.Trimesh(vertices=(pointsReconstructed1[0].data.cpu().numpy() + translation) / scalefactor,
@@ -328,7 +328,7 @@ class Inference(object):
         output3mesh = trimesh.Trimesh(vertices=output3[0].data.cpu().numpy(), faces=faces_tosave, process=False)
 
         print("... Done!")
-        return mesh, meshReg, output1mesh, output2mesh, output3mesh
+        return mesh, meshReg, output1mesh, output2mesh, output3mesh, weights
 
     def save(self, mesh, mesh_color, path, red, green, blue):
         """
@@ -337,6 +337,7 @@ class Inference(object):
         to_write = mesh.vertices
         b = np.zeros((len(mesh.faces), 4)) + 3
         b[:, 1:] = np.array(mesh.faces)
+        print(red, green, blue)
         try:
             points2write = pd.DataFrame({
                 'lst0Tite': to_write[:, 0],
@@ -349,6 +350,7 @@ class Inference(object):
             ply.write_ply(filename=path, points=points2write, as_text=True, text=False, faces=pd.DataFrame(b.astype(int)),
                           color=True)
         except:
+            print("Insert color failed")
             points2write = pd.DataFrame({
                 'lst0Tite': to_write[:, 0],
                 'lst1Tite': to_write[:, 1],
@@ -375,7 +377,7 @@ class Inference(object):
 
 
         my_utils.test_orientation(input)
-        mesh, meshReg, output1mesh, output2mesh, output3mesh = self.run(input, scalefactor, input_p)
+        mesh, meshReg, output1mesh, output2mesh, output3mesh, weights = self.run(input, scalefactor, input_p)
 
         if not self.HR:
             red = self.red_LR
@@ -388,24 +390,34 @@ class Inference(object):
             green = self.green_HR
             mesh_ref = self.mesh_ref
         
+        weights = weights.squeeze(-2)
+        value, idx = torch.max(weights, -1, keepdim=True)
+        colors = torch.zeros_like(weights)
+        
+        # coloring for average
+        colors = (colors + 255) * weights
+        
+        
+        # coloring for max choosing
+        # colors[torch.arange(colors.size(0))[:, None, None], torch.arange(colors.size(1))[None, :, None], idx] = 255
+        
+        red, green, blue = colors[:, :, 0].squeeze().cpu().numpy(), colors[:, :, 1].squeeze().cpu().numpy(), colors[:, :, 2].squeeze().cpu().numpy()
+        
         if self.save_path is None:
             self.save(mesh, self.mesh_ref_LR, input_p[:-4] + "InitialGuess.ply", self.red_LR, self.green_LR,
                       self.blue_LR)
             self.save(meshReg, mesh_ref, input_p[:-4] + "FinalReconstruction.ply", red, green, blue)
-            self.save(output1mesh, mesh_ref, input_p[:-4] + "Reconstruction1.ply", red, green, blue)
-            self.save(output2mesh, mesh_ref, input_p[:-4] + "Reconstruction2.ply", red, green, blue)
-            self.save(output3mesh, mesh_ref, input_p[:-4] + "Reconstruction3.ply", red, green, blue)
+            self.save(output1mesh, mesh_ref, input_p[:-4] + "Reconstruction1.ply", red, np.zeros_like(green), np.zeros_like(blue))
+            self.save(output2mesh, mesh_ref, input_p[:-4] + "Reconstruction2.ply", np.zeros_like(red), green, np.zeros_like(blue))
+            self.save(output3mesh, mesh_ref, input_p[:-4] + "Reconstruction3.ply", np.zeros_like(red), np.zeros_like(blue), blue)
         else:
             self.save(mesh, self.mesh_ref_LR, os.path.join(self.save_path, input_p[-8:-4] + f"InitialGuess.ply"),
                       self.red_LR, self.green_LR, self.blue_LR)
             self.save(meshReg, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "FinalReconstruction.ply"), red,
                       green, blue)
-            self.save(output1mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction1.ply"), red,
-                      green, blue)
-            self.save(output2mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction2.ply"), red,
-                      green, blue)
-            self.save(output3mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction3.ply"), red,
-                      green, blue)
+            self.save(output1mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction1.ply"), red, np.zeros_like(green), np.zeros_like(blue))
+            self.save(output2mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction2.ply"), np.zeros_like(red), green, np.zeros_like(blue))
+            self.save(output3mesh, mesh_ref, os.path.join(self.save_path, input_p[-8:-4] + "Reconstruction3.ply"), np.zeros_like(red), np.zeros_like(blue), blue)
 
         # Save optimal reconstruction
 
